@@ -1,0 +1,17 @@
+services:
+
+  sidecar-git-pull:
+    image: alpine:3.19
+    build: ./sidecar
+    volumes:
+     - ./shared:/shared
+     
+  app:
+    build: ./app
+    ports:
+      - "8080:8080"
+    volumes:
+     - ./shared:/shared
+    depends_on:
+      - sidecar-git-pull
+  

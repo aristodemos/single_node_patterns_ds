@@ -1,0 +1,13 @@
+services:
+  web:
+    build: ./web
+    volumes:
+      - ./logs:/logs
+
+  sidecar-log:
+    image: alpine:3.19
+    command: sh -c "tail -F /logs/app.log"
+    volumes:
+      - ./logs:/logs
+    depends_on:
+      - web

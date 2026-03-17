@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Dist.Labs-HW-1</title>
+    <meta charset="utf-8">
+    <style>
+      @import url(https://fonts.googleapis.com/css?family=Yanone+Kaffeesatz);
+      @import url(https://fonts.googleapis.com/css?family=Droid+Serif:400,700,400italic);
+      @import url(https://fonts.googleapis.com/css?family=Ubuntu+Mono:400,700,400italic);
+
+      body { font-family: 'Droid Serif'; }
+      h1, h2, h3 {
+        font-family: 'Yanone Kaffeesatz';
+        font-weight: normal;
+      }
+      .remark-code, .remark-inline-code { font-family: 'Ubuntu Mono'; }
+    </style>
+  </head>
+  <body>
+    <textarea id="source">
+
+<!-- class: center, middle -->
+# 📦 Sidecar Pattern in Distributed Systems
+
+### (Hands-on Lab with Docker Compose)
+
+---
+
+## 🎯 What we will learn today
+
+By the end of this session, you should be able to:
+
+* Explain what the **Sidecar Pattern** is
+* Understand **why we use it in real systems**
+* Build a system where **containers collaborate**
+* Apply the pattern using **Docker Compose**
+
+---
+
+## 🧠 The Big Idea
+
+When we say *Sidecar Pattern*, we mean:
+
+> Deploy a helper component **next to** my main application to extend its functionality — without modifying the application itself.
+
+---
+
+## 🏍️ Intuition (Why “Sidecar”?)
+
+Think of a motorcycle with a sidecar:
+
+* The motorcycle = main application
+* The sidecar = helper functionality
+
+![sidecar](https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQxbJy3aVXYbV4L3EryCx87Zp0zCxkjgIu0Jg&s)
+
+They:
+
+* Travel together
+* Are deployed together
+* Have separate responsibilities
+
+---
+
+## 🧩 Core Characteristics
+
+A sidecar:
+
+* Runs in a **separate container**
+* Shares:
+  * Network
+  * Storage (optional)
+
+* Has a **single, focused responsibility**
+* Can be reused across applications
+
+---
+
+## ❗ Why not just modify the app?
+
+Good question. In real systems:
+
+* The app may be **legacy** (we cannot change it)
+* We want **separation of concerns**
+* We want **reusable infrastructure components**
+* We want **independent scaling and updates**
+
+---
+
+## 🧱 Common Use Cases
+
+Sidecars are often used for:
+
+* Logging and monitoring
+* HTTPS / TLS termination
+* Configuration injection
+* Service mesh proxies
+
+---
+
+# 🧪 Hands-on Example 1: Logging Sidecar
+
+---
+
+## 🧠 Concept
+
+Run:
+
+* A **main app** that writes logs to a file
+* A **sidecar** that reads and processes those logs
+
+👉 The app does not know the sidecar exists.
+
+---
+
+## 🏗️ Architecture
+
+```
+[ app container ] ---> writes logs ---> shared volume
+[ sidecar       ] ---> reads logs  ---> prints to console
+```
+
+---
+
+## 📁 Step 1 — Project Setup
+
+Create:
+
+```
+sidecar-lab/
+└─ example-1/
+    ├─ docker-compose.yml
+    ├─ web/
+    │   ├─ Dockerfile
+    │   └─ app.sh
+    └─ logs/
+    
+
+```
+
+---
+
+## 🧑‍💻 Step 2 — Main Application
+
+### web/app.sh
+
+```bash
+#!/bin/sh
+
+while true; do
+  echo "$(date) - Request handled" >> /logs/app.log
+  sleep 2
+done
+```
+
+---
+
+### web/Dockerfile
+
+```dockerfile
+FROM alpine:3.19
+WORKDIR /app
+COPY app.sh .
+RUN chmod +x app.sh
+CMD ["./app.sh"]
+```
+
+---
+
+## 🔍 What this app does
+
+* Simulates a service
+* Writes logs to `/logs/app.log`
+* Has **no idea** anything else is reading those logs
+
+---
+
+## 🪵 Step 3 — Sidecar Container
+
+Use a simple container:
+
+```bash
+tail -F /logs/app.log
+```
+
+👉 This continuously reads the log file.
+
+---
+
+## ⚙️ Step 4 — Docker Compose
+
+```yaml
+version: "3.9"
+
+services:
+  web:
+    build: ./web
+    volumes:
+      - ./logs:/logs
+
+  log-sidecar:
+    image: alpine:3.19
+    command: sh -c "tail -F /logs/app.log"
+    volumes:
+      - ./logs:/logs
+    depends_on:
+      - web
+```
+
+---
+
+## ▶️ Step 5 — Run the system
+
+Run:
+
+```bash
+docker compose up --build
+```
+
+---
+
+## 👀 What we expect to observe
+
+* The app writes logs silently
+* The sidecar prints logs in real time
+
+👉 This is the key moment:
+
+> The sidecar adds functionality without modifying the app.
+
+---
+
+## 💬 Discussion
+
+* Why is this better than putting logging in the app?
+* What happens if the sidecar crashes?
+* How do the containers communicate?
+
+---
+
+# 🔐 Hands-on Example 2: HTTPS Sidecar
+
+---
+
+## 🧠 Concept
+
+Something more realistic:
+
+👉 Adding HTTPS to an HTTP-only service
+
+---
+
+## 🏗️ Architecture
+
+```
+Browser
+   ↓ HTTPS
+[ Nginx sidecar ]
+   ↓ HTTP
+[ App container ]
+```
+
+---
+
+## ❗ Key Insight
+
+* The app **does not support HTTPS**
+* The sidecar **adds HTTPS externally**
+
+---
+
+## 📁 Step 1 — Project Structure
+
+```
+example2/
+ ├─ docker-compose.yml
+ ├─ nginx/
+ │   ├─ default.conf
+ │   └─ certs/
+ └─ app/
+     ├─ Dockerfile
+     └─ server.py
+```
+
+---
+
+## 🧑‍💻 Step 2 — Legacy App
+
+### app/server.py
+
+```python
+from http.server import SimpleHTTPRequestHandler, HTTPServer
+
+PORT = 8080
+
+print("Starting HTTP server on port", PORT)
+HTTPServer(("", PORT), SimpleHTTPRequestHandler).serve_forever()
+```
+
+---
+
+### app/Dockerfile
+
+```dockerfile
+FROM python:3.12-alpine
+WORKDIR /app
+COPY server.py .
+CMD ["python", "server.py"]
+```
+
+---
+
+## 🔐 Step 3 — Generate Certificate
+
+Run:
+
+```bash
+openssl req -x509 -nodes -days 365 \
+-newkey rsa:2048 \
+-keyout key.pem \
+-out cert.pem \
+-subj "/CN=localhost"
+```
+
+👉 This creates a self-signed certificate for the lab.
+
+---
+
+## ⚙️ Step 4 — Nginx Sidecar Config
+
+### nginx/default.conf
+
+```nginx
+server {
+    listen 443 ssl;
+
+    ssl_certificate /certs/cert.pem;
+    ssl_certificate_key /certs/key.pem;
+
+    location / {
+        proxy_pass http://app:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+
+---
+
+## 🐳 Step 5 — Docker Compose
+
+```yaml
+version: "3.9"
+
+services:
+  app:
+    build: ./app
+    expose:
+      - "8080"
+
+  nginx-sidecar:
+    image: nginx:alpine
+    ports:
+      - "8443:443"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
+      - ./nginx/certs:/certs
+    depends_on:
+      - app
+```
+
+---
+
+## ▶️ Step 6 — Run the system
+
+Run:
+
+```bash
+docker compose up --build
+```
+
+Then open:
+
+```
+https://localhost:8443
+```
+
+---
+
+## 👀 What we expect to observe
+
+* Browser shows HTTPS (with warning)
+* App still runs HTTP internally
+
+👉 This is the key takeaway:
+
+> We added security without touching the application.
+
+---
+
+## 🧠 Key Learning Points
+
+* Sidecars **extend functionality externally**
+* Containers communicate via:
+
+  * Network (service names)
+  * Volumes
+* This pattern is widely used in:
+
+  * Kubernetes
+  * Service meshes (e.g., Envoy)
+
+---
+
+## ⚠️ Trade-offs
+
+Sidecars are powerful, but:
+
+* More containers → more complexity
+* Debugging becomes harder
+* Resource usage increases
+
+---
+
+## 🧩 Final Thought
+
+When designing systems, always ask:
+
+> Should this functionality live *inside* the app — or *next to it*?
+
+That decision often leads you to the **Sidecar Pattern**.
+  
+
+
+    </textarea>
+    <script src="https://remarkjs.com/downloads/remark-latest.min.js">
+    </script>
+    <script>
+      var slideshow = remark.create();
+    </script>
+  </body>
+</html>

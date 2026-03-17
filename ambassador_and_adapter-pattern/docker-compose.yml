@@ -1,0 +1,65 @@
+services:
+  demo-app:
+    build: ./ambassador-demo/app
+    ports:
+      - "8000:8000"
+    environment:
+      APP_PORT: "8000"
+      AMBASSADOR_URL: "http://ambassador:8001"
+    depends_on:
+      - ambassador
+
+  ambassador:
+    build: ./ambassador-demo/ambassador
+    ports:
+      - "8001:8001"
+    environment:
+      PORT: "8001"
+      STABLE_URL: "http://stable-api:8002"
+      CANARY_URL: "http://canary-api:8003"
+      CANARY_WEIGHT: "0.10"
+      ENABLE_EXPERIMENTS: "true"
+      DEFAULT_TARGET: "stable"
+    depends_on:
+      - stable-api
+      - canary-api
+
+  stable-api:
+    build: ./ambassador-demo/stable-api
+    environment:
+      PORT: "8002"
+      VARIANT: "stable"
+
+  canary-api:
+    build: ./ambassador-demo/canary-api
+    environment:
+      PORT: "8003"
+      VARIANT: "canary"
+
+  legacy-app:
+    build: ./adapter-demo/legacy-app
+    ports:
+      - "8100:8100"
+    environment:
+      PORT: "8100"
+
+  metrics-adapter:
+    build: ./adapter-demo/metrics-adapter
+    ports:
+      - "9101:9101"
+    environment:
+      PORT: "9101"
+      TARGET_BASE_URL: "http://legacy-app:8100"
+      SCRAPE_TIMEOUT_SECONDS: "1.5"
+    depends_on:
+      - legacy-app
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    profiles: ["observability"]
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./adapter-demo/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - metrics-adapter
